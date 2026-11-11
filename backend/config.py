@@ -1,0 +1,10 @@
+import os
+
+
+SERIAL_PORT = "COM4"
+BAUD_RATE = 115200
+
+OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
+OLLAMA_MODEL = "qwen2.5:3b"
+
+HISTORY_LIMIT = 600

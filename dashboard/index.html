@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaGuard 3.0</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #080d14;
+    color: #edf3fa;
+    font-family: Arial, sans-serif;
+}
+
+header {
+    padding: 25px 5%;
+    border-bottom: 1px solid #263447;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 23px;
+    font-weight: bold;
+    letter-spacing: 3px;
+}
+
+.logo span {
+    color: #5ed6d0;
+}
+
+.status {
+    color: #9aadc1;
+}
+
+main {
+    max-width: 1400px;
+    margin: auto;
+    padding: 35px 5%;
+}
+
+h1 {
+    font-size: 34px;
+}
+
+h2 {
+    font-size: 17px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.card {
+    background: #111c29;
+    border: 1px solid #253447;
+    border-radius: 13px;
+    padding: 20px;
+}
+
+.label {
+    color: #91a4b9;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.value {
+    font-size: 34px;
+    font-weight: bold;
+    margin: 15px 0 5px;
+}
+
+.unit {
+    color: #91a4b9;
+    font-size: 12px;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 16px;
+    margin-top: 18px;
+}
+
+canvas {
+    width: 100%;
+    height: 260px;
+}
+
+button {
+    background: #5ed6d0;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 18px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.warning {
+    background: #292116;
+    border: 1px solid #55452b;
+    padding: 11px;
+    margin: 8px 0;
+    border-radius: 8px;
+    color: #f0c98d;
+    font-size: 13px;
+}
+
+.stat {
+    padding: 9px 0;
+    border-bottom: 1px solid #253447;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+#report {
+    white-space: pre-wrap;
+    line-height: 1.7;
+    color: #dce8f3;
+}
+
+@media(max-width: 900px) {
+    .grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media(max-width: 500px) {
+    .grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .value {
+        font-size: 25px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <div class="logo">
+        AQUA<span>GUARD</span> 3.0
+    </div>
+
+    <div class="status" id="connection">
+        Ansluter...
+    </div>
+</header>
+
+<main>
+
+    <h1>Vattenövervakning</h1>
+    <p style="color:#91a4b9">
+        Övervakning av vattenkvalitet i realtid och intelligent analys.
+    </p>
+
+    <div class="grid">
+
+        <div class="card">
+            <div class="label">Grumlighet</div>
+            <div class="value" id="turbidity">--</div>
+            <div class="unit">NTU · ungefärligt</div>
+        </div>
+
+        <div class="card">
+            <div class="label">TDS</div>
+            <div class="value" id="tds">--</div>
+            <div class="unit">PPM · uppskattat</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Vattentemperatur</div>
+            <div class="value" id="temperature">--</div>
+            <div class="unit">°C · manuellt angiven</div>
+        </div>
+
+        <div class="card">
+            <div class="label">MQ-135</div>
+            <div class="value" id="mq135">--</div>
+            <div class="unit">V · rå sensorsignal</div>
+        </div>
+
+    </div>
+
+    <div class="layout">
+
+        <div class="card">
+            <h2>TDS-mäthistorik</h2>
+            <canvas id="chart"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>Automatisk analys</h2>
+            <div id="warnings">Väntar på mätdata...</div>
+
+            <h2 style="margin-top:25px">Korrelationer</h2>
+            <div id="correlations"></div>
+        </div>
+
+    </div>
+
+    <div class="layout">
+
+        <div class="card">
+            <h2>Sessionsstatistik</h2>
+            <div id="statistics">Inga data.</div>
+        </div>
+
+        <div class="card">
+            <h2>AI-analys</h2>
+
+            <button id="aiButton">
+                Skapa AI-rapport
+            </button>
+
+            <div id="report" style="margin-top:20px">
+                AI-rapporten visas här.
+            </div>
+        </div>
+
+    </div>
+
+</main>
+
+<script>
+const connection = document.getElementById("connection");
+
+let historyData = [];
+let socket;
+
+function display(id, value, decimals = 1) {
+    const element = document.getElementById(id);
+
+    if (value === null || value === undefined ||
+        !Number.isFinite(Number(value))) {
+        element.textContent = "--";
+        return;
+    }
+
+    element.textContent = Number(value).toFixed(decimals);
+}
+
+function drawChart(rows) {
+    const canvas = document.getElementById("chart");
+    const ctx = canvas.getContext("2d");
+
+    const width = canvas.clientWidth;
+    const height = 260;
+    const dpr = window.devicePixelRatio || 1;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const values = rows
+        .map(r => r.tds_ppm_est)
+        .filter(v => typeof v === "number");
+
+    if (values.length < 2) {
+        ctx.fillStyle = "#91a4b9";
+        ctx.fillText("Samlar in mätdata...", 20, 120);
+        return;
+    }
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+
+    const padding = 25;
+
+    ctx.strokeStyle = "#263447";
+
+    for (let i = 0; i < 4; i++) {
+        const y = padding + i * 65;
+
+        ctx.beginPath();
+        ctx.moveTo(padding, y);
+        ctx.lineTo(width - padding, y);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = "#5ed6d0";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    values.forEach((value, index) => {
+        const x = padding +
+            index * (width - padding * 2) /
+            (values.length - 1);
+
+        const y = height - padding -
+            ((value - min) / range) * (height - padding * 2);
+
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+
+    ctx.stroke();
+}
+
+function render(data) {
+    const latest = data.latest || {};
+    const rows = data.history || [];
+
+    historyData = rows;
+
+    display("turbidity", latest.turbidity_ntu_approx);
+    display("tds", latest.tds_ppm_est);
+    display("temperature", latest.water_temp_c);
+    display("mq135", latest.mq135_voltage, 3);
+
+    const connected = data.status?.connected;
+
+    connection.textContent = connected
+        ? "Arduino ansluten"
+        : "Arduino frånkopplad";
+
+    const analysis = data.analysis || {};
+
+    const warnings = [
+        ...(analysis.warnings || []),
+        ...(analysis.anomalies || []).map(a => a.message)
+    ];
+
+    document.getElementById("warnings").innerHTML =
+        warnings.map(w =>
+            `<div class="warning">${escapeHTML(w)}</div>`
+        ).join("") || "Inga varningar.";
+
+    const correlations = analysis.correlations || {};
+    const labels = {
+        tds_ppm_est: "Uppskattat TDS",
+        turbidity_ntu_approx: "Uppskattad grumlighet",
+        water_temp_c: "Vattentemperatur",
+        mq135_voltage: "MQ-135-spänning",
+        tds_vs_turbidity: "TDS jämfört med grumlighet",
+        tds_vs_temperature: "TDS jämfört med temperatur",
+        mq135_vs_temperature: "MQ-135 jämfört med temperatur"
+    };
+
+    document.getElementById("correlations").innerHTML =
+        Object.entries(correlations).map(([key, value]) => `
+            <div class="stat">
+                <span>${labels[key] || key}</span>
+                <b>${value ?? "--"}</b>
+            </div>
+        `).join("");
+
+    const stats = analysis.stats || {};
+
+    document.getElementById("statistics").innerHTML =
+        Object.entries(stats).map(([key, value]) => {
+            if (!value) return "";
+
+            return `
+                <div class="stat">
+                    <span>${labels[key] || key}</span>
+                    <span>Medel: ${value.mean} | Min: ${value.min} | Max: ${value.max}</span>
+                </div>
+            `;
+        }).join("") || "Inga data.";
+
+    drawChart(rows);
+}
+
+function escapeHTML(value) {
+    return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
+}
+
+function connect() {
+    const protocol =
+        location.protocol === "https:" ? "wss" : "ws";
+
+    socket = new WebSocket(
+        `${protocol}://${location.host}/ws`
+    );
+
+    socket.onopen = () => {
+        connection.textContent = "Ansluten till AquaGuard";
+    };
+
+    socket.onmessage = event => {
+        try {
+            render(JSON.parse(event.data));
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    socket.onclose = () => {
+        connection.textContent = "Återansluter...";
+        setTimeout(connect, 2000);
+    };
+
+    socket.onerror = () => socket.close();
+}
+
+document.getElementById("aiButton").addEventListener(
+    "click",
+    async () => {
+        const button = document.getElementById("aiButton");
+        const report = document.getElementById("report");
+
+        button.disabled = true;
+        button.textContent = "Analyserar...";
+        report.textContent = "AI:n analyserar mätdata...";
+
+        try {
+            const response = await fetch("/api/llm-report", {
+                method: "POST"
+            });
+
+            const data = await response.json();
+            report.textContent = data.report || "Ingen rapport returnerades.";
+
+        } catch (error) {
+            report.textContent = "Anslutningsfel till backend: " + error.message;
+        }
+
+        button.disabled = false;
+        button.textContent = "Skapa AI-rapport";
+    }
+);
+
+window.addEventListener("resize", () => drawChart(historyData));
+
+connect();
+</script>
+
+</body>
+</html>
